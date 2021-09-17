@@ -1,0 +1,1091 @@
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file           : main.c
+  * @brief          : Main program body
+  ******************************************************************************
+  * @attention
+  *
+  * <h2><center>&copy; Copyright (c) 2021 STMicroelectronics.
+  * All rights reserved.</center></h2>
+  *
+  * This software component is licensed by ST under BSD 3-Clause license,
+  * the "License"; You may not use this file except in compliance with the
+  * License. You may obtain a copy of the License at:
+  *                        opensource.org/licenses/BSD-3-Clause
+  *
+  ******************************************************************************
+  */
+/* USER CODE END Header */
+/* Includes ------------------------------------------------------------------*/
+#include "main.h"
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
+#include <stdio.h>
+#include <string.h>
+/* USER CODE END Includes */
+
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
+
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+/* USER CODE END PD */
+
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+
+/* USER CODE END PM */
+
+/* Private variables ---------------------------------------------------------*/
+TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim3;
+
+UART_HandleTypeDef huart6;
+
+/* USER CODE BEGIN PV */
+unsigned char mode=0; //0 for not assigned, 1 for locked, 2 for set, 3 for run
+unsigned char choose_mode_flag=0;
+
+unsigned char keypad_sum=0;
+unsigned char keypad_val=0;
+unsigned char previous_keypad_val=12;
+
+unsigned char choose_locked_flag=0;
+unsigned char choose_locked_state=0; //0  for not assigned, 1 for fully open, 2 for fully closed
+unsigned char locked_start_flag = 0;
+
+unsigned char choose_setup_flag=0;
+unsigned char input_parameter_flag=0;
+unsigned char input_parameter = 0; // 0 for not assigned, 1 for outside sense distance,2 for inside
+								   // 3 for remain open time, 4 for ramp up, 5 for ramp down
+unsigned char input_line=1;
+
+unsigned char outside_sensing_distance=4;
+unsigned char inside_sensing_distance=4;
+unsigned char remain_open_time=10;
+unsigned char ramp_up_const=5;
+unsigned char ramp_down_const=5;
+
+unsigned char start_running_flag=0;
+//unsigned char stop_running_flag=0;
+unsigned char outside_ultra_flag=0;
+unsigned char inside_ultra_flag=0;
+unsigned char outside_rising_flag=1;
+unsigned char inside_rising_flag=1;
+
+unsigned char min_switch_flag=0;
+unsigned char min_rising_flag=1;
+unsigned char max_switch_flag=0;
+unsigned char max_rising_flag=1;
+unsigned char colli_switch_flag=0;
+unsigned char colli_rising_flag=1;
+
+unsigned int outside_ultra_start=0;
+unsigned int outside_ultra_end=0;
+unsigned int outside_ultra_time=0;
+unsigned int outside_ultra_distance=0;
+unsigned int inside_ultra_start=0;
+unsigned int inside_ultra_end=0;
+unsigned int inside_ultra_time=0;
+unsigned int inside_ultra_distance=0;
+uint8_t motor_rvl;
+
+uint8_t LCD_INST = 0xFE;
+uint8_t LCD_FIRST = 128;
+uint8_t LCD_SECOND = 192;
+uint8_t LCD_CLEAN = 1;
+/* USER CODE END PV */
+
+/* Private function prototypes -----------------------------------------------*/
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_TIM2_Init(void);
+static void MX_TIM3_Init(void);
+static void MX_USART6_UART_Init(void);
+/* USER CODE BEGIN PFP */
+
+/* USER CODE END PFP */
+
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
+unsigned char get_col_val(unsigned char row_val)
+{
+	unsigned char col_val;
+	HAL_GPIO_WritePin(GPIOC,GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_8,GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(GPIOC,GPIO_PIN_6,GPIO_PIN_SET);
+	if(HAL_GPIO_ReadPin(GPIOB,row_val)==1)
+		col_val=1;
+	HAL_GPIO_WritePin(GPIOC,GPIO_PIN_6,GPIO_PIN_RESET);
+
+	HAL_GPIO_WritePin(GPIOC,GPIO_PIN_7,GPIO_PIN_SET);
+	if(HAL_GPIO_ReadPin(GPIOB,row_val)==1)
+		col_val=2;
+	HAL_GPIO_WritePin(GPIOC,GPIO_PIN_7,GPIO_PIN_RESET);
+
+	HAL_GPIO_WritePin(GPIOC,GPIO_PIN_8,GPIO_PIN_SET);
+	if(HAL_GPIO_ReadPin(GPIOB,row_val)==1)
+		col_val=3;
+	HAL_GPIO_WritePin(GPIOC,GPIO_PIN_8,GPIO_PIN_RESET);
+
+	HAL_GPIO_WritePin(GPIOC,GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_8,GPIO_PIN_SET);
+	return col_val;
+}
+unsigned char key_pressed()
+{
+	unsigned char col_val;
+	unsigned char key_array[] = {1,2,3,4,5,6,7,8,9,10,0,11};
+
+	if(HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_4) == 1)
+	{
+		col_val = get_col_val(GPIO_PIN_4);
+		return key_array[col_val-1];
+
+	}
+	else if(HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_5) == 1)
+	{
+		col_val = get_col_val(GPIO_PIN_5);
+		return key_array[col_val+2];
+
+	}
+	else if(HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_6) == 1)
+	{
+		col_val = get_col_val(GPIO_PIN_6);
+		return key_array[col_val+5];
+
+	}
+	else if(HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_7) == 1)
+	{
+		col_val = get_col_val(GPIO_PIN_7);
+		return key_array[col_val+8];
+
+	}
+	else
+		return 12;
+
+}
+
+void mode_switch_reset()
+{
+	choose_mode_flag=0;
+	keypad_sum=0;
+
+	choose_locked_flag=0;
+	choose_locked_state=0; //0  for not assigned, 1 for fully open, 2 for fully closed
+	locked_start_flag = 0;
+
+	choose_setup_flag=0;
+	input_parameter_flag=0;
+	input_parameter = 0; // 0 for not assigned, 1 for outside sense distance,2 for inside
+									   // 3 for remain open time, 4 for ramp up, 5 for ramp down
+	start_running_flag=0;
+	outside_ultra_flag=0;
+	inside_ultra_flag=0;
+	outside_rising_flag=1;
+	inside_rising_flag=1;
+
+	min_switch_flag=0;
+	min_rising_flag=1;
+	max_switch_flag=0;
+	max_rising_flag=1;
+	colli_switch_flag=0;
+	colli_rising_flag=1;
+
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_10|GPIO_PIN_11|GPIO_PIN_12, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET);
+}
+
+void change_line()
+{
+	HAL_UART_Transmit(&huart6,&LCD_INST,1,1000);
+	if(input_line==1)
+	{
+		HAL_UART_Transmit(&huart6,&LCD_SECOND,1,1000);
+		input_line = 2;
+	}
+	else
+	{
+		HAL_UART_Transmit(&huart6,&LCD_CLEAN,1,1000);
+		HAL_UART_Transmit(&huart6,&LCD_FIRST,1,1000);
+		input_line =1;
+	}
+	 HAL_Delay(10);
+}
+
+void clean_LCD()
+{
+	HAL_UART_Transmit(&huart6,&LCD_INST,1,1000);
+	HAL_UART_Transmit(&huart6,&LCD_CLEAN,1,1000);
+	input_line =1;
+	HAL_Delay(10);
+}
+
+void display_mode()
+{
+	if(mode == 2)
+	{
+		clean_LCD();
+		uint8_t buff_setup[] = "Setup";
+		HAL_UART_Transmit(&huart6, buff_setup, sizeof(buff_setup), 1000);
+		change_line();
+	}
+	else if(mode == 3)
+	{
+		clean_LCD();
+		uint8_t buff_run[] = "Run";
+		HAL_UART_Transmit(&huart6, buff_run, sizeof(buff_run), 1000);
+		change_line();
+	}
+}
+
+void choose_mode()
+{
+	char buff[100];
+	if((keypad_val ==1||keypad_val==2||keypad_val==3) && keypad_val!=previous_keypad_val)
+	{
+		keypad_sum = keypad_val;
+		previous_keypad_val=keypad_val;
+		snprintf(buff, 100, "%d", keypad_val);
+		HAL_UART_Transmit(&huart6, (uint8_t*)buff, strlen(buff), 1000);
+
+	}
+	else if(keypad_val == 11 && keypad_val!=previous_keypad_val)
+	{
+		previous_keypad_val=keypad_val;
+		mode = keypad_sum;
+		choose_mode_flag = 0;
+		keypad_sum=0;
+		mode_switch_reset();
+
+
+	}
+}
+
+void choose_setup()
+{
+	char buff[100];
+
+
+	if(keypad_val <=5 && keypad_val >=1 && keypad_val!=previous_keypad_val)
+	{
+		keypad_sum = keypad_val;
+		previous_keypad_val=keypad_val;
+		snprintf(buff, 100, "%d", keypad_sum);
+		HAL_UART_Transmit(&huart6, (uint8_t*)buff, strlen(buff), 1000);
+	}
+	else if(keypad_val == 11 && keypad_val!=previous_keypad_val)
+	{
+		previous_keypad_val=keypad_val;
+		input_parameter = keypad_sum;
+		choose_setup_flag = 0;
+		keypad_sum = 0;
+		input_parameter_flag=1;
+		display_mode();
+		snprintf(buff, 100, "%s%d %s","P" ,input_parameter,"Value: ");
+		HAL_UART_Transmit(&huart6,(uint8_t*)buff, strlen(buff), 1000);
+	}
+}
+
+void get_parameter()
+{
+	char buff[100];
+	uint8_t buff_setup_start[] = "PARAMETER NO.:";
+	uint8_t buff_error[] = "WRONG VALUE";
+	if(keypad_val!=previous_keypad_val)
+	{
+		previous_keypad_val=keypad_val;
+		if(keypad_val <=9)
+		{
+		keypad_sum = keypad_sum*10 +keypad_val;
+		snprintf(buff, 100, "%d", keypad_val);
+		HAL_UART_Transmit(&huart6, (uint8_t*)buff, strlen(buff), 1000);
+		}
+		else if(keypad_val == 11)
+		{
+			if(input_parameter == 1||input_parameter == 2)
+			{
+				if(keypad_sum == 2||keypad_sum ==4||keypad_sum ==6||keypad_sum ==8)
+				{
+					if(input_parameter == 1)
+						outside_sensing_distance = keypad_sum;
+					else
+						inside_sensing_distance = keypad_sum;
+					display_mode();
+					HAL_UART_Transmit(&huart6, buff_setup_start, sizeof(buff_setup_start), 1000);
+					keypad_sum =0;
+					input_parameter_flag=0;
+					choose_setup_flag=1;
+				}
+				else
+				{
+					display_mode();
+					HAL_UART_Transmit(&huart6,buff_error, sizeof(buff_error), 1000);
+					HAL_Delay(100);
+					display_mode();
+					snprintf(buff, 100, "%s%d %s","P" ,input_parameter,"Value: ");
+					HAL_UART_Transmit(&huart6,(uint8_t*)buff, strlen(buff), 1000);
+					keypad_sum=0;
+				}
+			}
+
+
+			else if(input_parameter ==3)
+			{
+				if(keypad_sum == 5||keypad_sum ==10||keypad_sum ==15||keypad_sum ==20)
+				{
+					remain_open_time = keypad_sum;
+					keypad_sum =0;
+					display_mode();
+					HAL_UART_Transmit(&huart6, buff_setup_start, sizeof(buff_setup_start), 1000);
+					input_parameter_flag=0;
+					choose_setup_flag=1;
+
+				}
+				else
+				{
+					display_mode();
+					HAL_UART_Transmit(&huart6,buff_error, sizeof(buff_error), 1000);
+					HAL_Delay(100);
+					display_mode();
+					snprintf(buff, 100, "%s%d %s","P" ,input_parameter,"Value: ");
+					HAL_UART_Transmit(&huart6,(uint8_t*)buff, strlen(buff), 1000);
+					keypad_sum=0;
+				}
+
+			}
+			else if(input_parameter ==4 ||input_parameter ==5)
+			{
+				if(keypad_sum>=1 && keypad_sum <=9)
+				{
+
+					if(input_parameter == 4)
+						ramp_up_const = keypad_sum;
+					else
+						ramp_down_const = keypad_sum;
+					keypad_sum =0;
+					display_mode();
+					HAL_UART_Transmit(&huart6, buff_setup_start, sizeof(buff_setup_start), 1000);
+					input_parameter_flag=0;
+					choose_setup_flag=1;
+
+				}
+				else
+				{
+					display_mode();
+					HAL_UART_Transmit(&huart6,buff_error, sizeof(buff_error), 1000);
+					HAL_Delay(100);
+					display_mode();
+					snprintf(buff, 100, "%s%d %s","P" ,input_parameter,"Value: ");
+					HAL_UART_Transmit(&huart6,(uint8_t*)buff, strlen(buff), 1000);
+					keypad_sum=0;
+				}
+
+			}
+
+		}
+	}
+
+}
+
+void check_limit_min()
+{
+
+	if(min_switch_flag)
+	{
+		uint8_t buff_min[] = "DETECT MIN LIMIT";
+		display_mode();
+		if(min_rising_flag)
+		{
+			//display_mode();
+			HAL_UART_Transmit(&huart6,buff_min, sizeof(buff_min), 1000);
+			min_rising_flag = 0;
+		}
+		else
+
+		{
+			min_rising_flag = 1;
+		}
+		min_switch_flag = 0;
+	}
+}
+void check_limit_max()
+{
+	if(max_switch_flag)
+	{
+		uint8_t buff_max[] = "DETECT MAX LIMIT";
+		display_mode();
+		if(max_rising_flag)
+		{
+			//display_mode();
+			HAL_UART_Transmit(&huart6,buff_max, sizeof(buff_max), 1000);
+			max_rising_flag = 0;
+		}
+		else
+
+		{
+			max_rising_flag = 1;
+		}
+		max_switch_flag = 0;
+	}
+}
+void check_collision()
+{
+
+	if(colli_switch_flag)
+	{
+		uint8_t buff_colli[] = "DETECT COLLISION";
+		display_mode();
+		if(colli_rising_flag)
+		{
+			HAL_UART_Transmit(&huart6,buff_colli, sizeof(buff_colli), 1000);
+			colli_rising_flag = 0;
+		}
+		else
+
+		{
+			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_12, GPIO_PIN_RESET);
+			colli_rising_flag = 1;
+		}
+		colli_switch_flag = 0;
+	}
+}
+void check_ultra_out()
+{
+	uint8_t buff_outside[] = "DETECT OUTSIDE";
+	if(outside_ultra_flag==1)
+	{
+		display_mode();
+		HAL_UART_Transmit(&huart6,buff_outside, sizeof(buff_outside), 1000);
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_10, GPIO_PIN_SET);
+		outside_ultra_flag=0;
+	}
+	else if(outside_ultra_flag==2)
+	{
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_10, GPIO_PIN_RESET);
+		display_mode();
+		outside_ultra_flag=0;
+	}
+}
+void check_ultra_in()
+{
+	uint8_t buff_inside[] = "DETECT INSIDE";
+	if(inside_ultra_flag==1)
+	{
+		display_mode();
+		HAL_UART_Transmit(&huart6,buff_inside, sizeof(buff_inside), 1000);
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_SET);
+		inside_ultra_flag=0;
+	}
+	else if(inside_ultra_flag==2)
+	{
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_RESET);
+		inside_ultra_flag=0;
+		if(outside_ultra_flag!=1)
+			display_mode();
+
+	}
+}
+
+void accle(uint32_t value){
+	TIM3->CCR1 = value*160;
+	TIM3->CCR2 = 0;
+	HAL_Delay(1);
+}
+
+
+void deccle(uint8_t value){
+	TIM3->CCR2 = value*160;
+	TIM3->CCR1 = 0;
+	HAL_Delay(1);
+}
+
+void print_rvl(){
+	char buff[100];
+	snprintf(buff, 100, "%d", motor_rvl);
+	HAL_UART_Transmit(&huart6, (uint8_t*)buff, strlen(buff), 1000);
+}
+/* USER CODE END 0 */
+
+/**
+  * @brief  The application entry point.
+  * @retval int
+  */
+int main(void)
+{
+  /* USER CODE BEGIN 1 */
+  uint8_t buff_mode_select[] = "MODE SELECT:";
+  uint8_t buff_locked_select[] = "PRESS SWITCH:";
+  uint8_t buff_locked_open[] = "FULLY OPEN";
+  uint8_t buff_locked_closed[] = "FULLY CLOSED";
+  uint8_t buff_setup_start[] = "PARAMETER NO.:";
+  motor_rvl=0;
+  /* USER CODE END 1 */
+
+  /* MCU Configuration--------------------------------------------------------*/
+
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
+
+  /* USER CODE BEGIN Init */
+
+  /* USER CODE END Init */
+
+  /* Configure the system clock */
+  SystemClock_Config();
+
+  /* USER CODE BEGIN SysInit */
+
+  /* USER CODE END SysInit */
+
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_TIM2_Init();
+  MX_TIM3_Init();
+  MX_USART6_UART_Init();
+  /* USER CODE BEGIN 2 */
+  HAL_TIM_Base_Start(&htim3);
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
+  HAL_GPIO_WritePin(GPIOB,GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7,GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC,GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_8,GPIO_PIN_SET);
+  HAL_TIM_Base_Start(&htim2);
+
+  //HAL_Delay(500);
+  /* USER CODE END 2 */
+
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+  while (1)
+  {
+	  //print_rvl();
+	  if(motor_rvl < 6){
+		  accle(5);
+	  }else{
+		  accle(0);
+		  deccle(10);
+	  }
+
+
+	  keypad_val = key_pressed();
+	  /* choose mode start */
+	  if((mode==0 ||keypad_val == 10)&&!choose_mode_flag)
+	  {
+		  //PRINT ENTER MODE HERE
+		  clean_LCD();
+		  HAL_UART_Transmit(&huart6, buff_mode_select, sizeof(buff_mode_select), 1000);
+		  //change_line();
+		  choose_mode_flag=1;
+	  }
+	  if(choose_mode_flag)
+	  {
+		  choose_mode();
+	  }
+
+	  /* locked mode start */
+	  if(mode == 1 && !choose_locked_state && !choose_locked_flag &&!choose_mode_flag) //locked
+	  {
+		  choose_locked_flag=1;
+		  clean_LCD();
+		  HAL_UART_Transmit(&huart6,buff_locked_select, sizeof(buff_locked_select), 1000);
+	  }
+	  if(mode ==1 && choose_locked_state==1 && !locked_start_flag &&!choose_mode_flag)
+	  {
+		  change_line();
+		  HAL_UART_Transmit(&huart6,buff_locked_open, sizeof(buff_locked_open), 1000);
+		  locked_start_flag = 1;
+		  //move to fully open and then do nothing
+		  if(motor_rvl<6){
+			  accle(5);
+		  }else{
+			  deccle(10);
+		  }
+
+	  }
+	  if(mode ==1 && choose_locked_state==2 && !locked_start_flag &&!choose_mode_flag)
+	  {
+		  change_line();
+		  HAL_UART_Transmit(&huart6,buff_locked_closed, sizeof(buff_locked_closed), 1000);
+		  locked_start_flag = 1;
+		  //move to fully closed and then do nothing
+
+	  }
+
+
+	  /* set mode start */
+	  if(mode ==2 && !choose_setup_flag &&!input_parameter_flag &&!choose_mode_flag)
+	  {
+		  display_mode();
+		  HAL_UART_Transmit(&huart6, buff_setup_start, sizeof(buff_setup_start), 1000);
+		  choose_setup_flag =1;
+	  }
+
+	  if(mode ==2 && choose_setup_flag &&!choose_mode_flag)
+	  {
+		  choose_setup();
+	  }
+	  if(mode ==2 && input_parameter_flag &&!choose_mode_flag)
+	  {
+		  get_parameter();
+	  }
+
+	  /* run mode start */
+	  if(mode ==3 &&!choose_mode_flag &&!start_running_flag)
+	  {
+		  display_mode();
+		  start_running_flag=1;
+	  }
+	  if(start_running_flag &&!choose_mode_flag)
+	  {
+		  //normally run
+		  check_ultra_out();
+		  check_ultra_in();
+		  check_limit_min();
+		  check_limit_max();
+		  check_collision();
+	  }
+
+	  if(start_running_flag &&!choose_mode_flag &&min_rising_flag && max_rising_flag && colli_rising_flag )
+	  {
+		  HAL_GPIO_TogglePin(GPIOB,GPIO_PIN_12);
+	  }
+	  else
+	  {
+		  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET);
+	  }
+	  if(!colli_rising_flag)
+	  {
+		  HAL_GPIO_TogglePin(GPIOC,GPIO_PIN_12);
+	  }
+	  HAL_GPIO_TogglePin(GPIOA,GPIO_PIN_9);
+	  HAL_GPIO_TogglePin(GPIOA,GPIO_PIN_10);
+	  HAL_Delay(100);
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
+  }
+  /* USER CODE END 3 */
+}
+
+/**
+  * @brief System Clock Configuration
+  * @retval None
+  */
+void SystemClock_Config(void)
+{
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+  /** Configure the main internal regulator output voltage
+  */
+  __HAL_RCC_PWR_CLK_ENABLE();
+  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE2);
+  /** Initializes the RCC Oscillators according to the specified parameters
+  * in the RCC_OscInitTypeDef structure.
+  */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Initializes the CPU, AHB and APB buses clocks
+  */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+/**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_IC_InitTypeDef sConfigIC = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 1600-1;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 4294967295;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_IC_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
+  sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
+  sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
+  sConfigIC.ICFilter = 0;
+  if (HAL_TIM_IC_ConfigChannel(&htim2, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+
+}
+
+/**
+  * @brief TIM3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM3_Init(void)
+{
+
+  /* USER CODE BEGIN TIM3_Init 0 */
+
+  /* USER CODE END TIM3_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM3_Init 1 */
+
+  /* USER CODE END TIM3_Init 1 */
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 1600-1;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 999;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.Pulse = 0;
+  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM3_Init 2 */
+
+  /* USER CODE END TIM3_Init 2 */
+  HAL_TIM_MspPostInit(&htim3);
+
+}
+
+/**
+  * @brief USART6 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART6_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART6_Init 0 */
+
+  /* USER CODE END USART6_Init 0 */
+
+  /* USER CODE BEGIN USART6_Init 1 */
+
+  /* USER CODE END USART6_Init 1 */
+  huart6.Instance = USART6;
+  huart6.Init.BaudRate = 9600;
+  huart6.Init.WordLength = UART_WORDLENGTH_8B;
+  huart6.Init.StopBits = UART_STOPBITS_1;
+  huart6.Init.Parity = UART_PARITY_NONE;
+  huart6.Init.Mode = UART_MODE_TX_RX;
+  huart6.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart6.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART6_Init 2 */
+
+  /* USER CODE END USART6_Init 2 */
+
+}
+
+/**
+  * @brief GPIO Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_GPIO_Init(void)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+  /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOH_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12|GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6
+                          |GPIO_PIN_7, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_8|GPIO_PIN_10
+                          |GPIO_PIN_11|GPIO_PIN_12, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9|GPIO_PIN_10, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : PB10 */
+  GPIO_InitStruct.Pin = GPIO_PIN_10;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PB12 PB4 PB5 PB6
+                           PB7 */
+  GPIO_InitStruct.Pin = GPIO_PIN_12|GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6
+                          |GPIO_PIN_7;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PB13 PB14 PB15 */
+  GPIO_InitStruct.Pin = GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PC6 PC7 PC8 PC10
+                           PC11 PC12 */
+  GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_8|GPIO_PIN_10
+                          |GPIO_PIN_11|GPIO_PIN_12;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PC9 */
+  GPIO_InitStruct.Pin = GPIO_PIN_9;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PA8 */
+  GPIO_InitStruct.Pin = GPIO_PIN_8;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PA9 PA10 */
+  GPIO_InitStruct.Pin = GPIO_PIN_9|GPIO_PIN_10;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+
+}
+
+/* USER CODE BEGIN 4 */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+	if(GPIO_Pin == GPIO_PIN_8)
+	{
+
+		if(mode ==3)
+		{
+			if(outside_rising_flag)
+			{
+				outside_ultra_start = __HAL_TIM_GetCounter(&htim2);
+				outside_rising_flag = 0;
+
+
+			}
+			else
+			{
+				outside_ultra_end = __HAL_TIM_GetCounter(&htim2);
+				outside_rising_flag = 1;
+				outside_ultra_time = outside_ultra_end - outside_ultra_start;
+				outside_ultra_distance = 3.44*outside_ultra_time/2;
+				if(outside_ultra_distance <= outside_sensing_distance*30.48)
+				{
+					//HAL_UART_Transmit(&huart6,buff_outside, sizeof(buff_outside), 1000);
+					outside_ultra_flag =1;
+				}
+				else
+				{
+					outside_ultra_flag =2;
+				}
+
+			}
+
+		}
+	}
+	if(GPIO_Pin == GPIO_PIN_9)
+	{
+
+		if(mode ==3)
+		{
+
+			if(inside_rising_flag)
+			{
+				inside_ultra_start = __HAL_TIM_GetCounter(&htim2);
+				inside_rising_flag = 0;
+
+
+			}
+			else
+			{
+				inside_ultra_end = __HAL_TIM_GetCounter(&htim2);
+				inside_rising_flag = 1;
+				inside_ultra_time = inside_ultra_end - inside_ultra_start;
+				inside_ultra_distance = 3.44*inside_ultra_time/2;
+				if(inside_ultra_distance <= inside_sensing_distance*30.48)
+				{
+					//HAL_UART_Transmit(&huart6,buff_inside, sizeof(buff_inside), 1000);
+					inside_ultra_flag =1;
+				}
+				else
+				{
+					inside_ultra_flag =2;
+				}
+
+
+			}
+
+		}
+	}
+	if(GPIO_Pin == GPIO_PIN_14)  //max_limit
+	{
+		if(mode ==1 && choose_locked_flag ==1) //ASSUME START OPEN, CAN BE OPTTIMIZED
+		{
+			choose_locked_state=1;
+			choose_locked_flag=0;
+		}
+		else if(mode ==3)
+		{
+			max_switch_flag=1;
+		}
+	}
+	if(GPIO_Pin == GPIO_PIN_15) //min_limit
+	{
+		if(mode ==1 && choose_locked_flag ==1)
+		{
+			choose_locked_state=2;
+			choose_locked_flag=0;
+		}
+		else if(mode ==3)
+		{
+			min_switch_flag=1;
+		}
+	}
+	if(GPIO_Pin == GPIO_PIN_13)
+	{
+		if(mode ==3)
+		{
+			colli_switch_flag=1;
+		}
+	}
+	if(GPIO_Pin == GPIO_PIN_10)
+	{
+		motor_rvl += 1;
+	}
+
+
+}
+/* USER CODE END 4 */
+
+/**
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
+  */
+void Error_Handler(void)
+{
+  /* USER CODE BEGIN Error_Handler_Debug */
+  /* User can add his own implementation to report the HAL error return state */
+  __disable_irq();
+  while (1)
+  {
+  }
+  /* USER CODE END Error_Handler_Debug */
+}
+
+#ifdef  USE_FULL_ASSERT
+/**
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
+void assert_failed(uint8_t *file, uint32_t line)
+{
+  /* USER CODE BEGIN 6 */
+  /* User can add his own implementation to report the file name and line number,
+     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  /* USER CODE END 6 */
+}
+#endif /* USE_FULL_ASSERT */
+
+/************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/

@@ -1,0 +1,57 @@
+Pre-production check start.
+File: N:\ECE298\Lab4\ECE298_Lab4\ECE298_Lab4.pdsprj
+Date: August 1, 2021, 8:15:33 PM
+TEST: Connectivity.
+PASS: Connectivity valid.
+TEST: Object validity.
+PASS: Objects valid.
+TEST: DRC valid.
+PASS: No DRC errors.
+TEST: Zone overlap.
+Imaging Copper Layer TOP
+Imaging Copper Layer I1
+Imaging Copper Layer I2
+Imaging Copper Layer I3
+Imaging Copper Layer I4
+Imaging Copper Layer I5
+Imaging Copper Layer I6
+Imaging Copper Layer I7
+Imaging Copper Layer I8
+Imaging Copper Layer I9
+Imaging Copper Layer I10
+Imaging Copper Layer I11
+Imaging Copper Layer I12
+Imaging Copper Layer I13
+Imaging Copper Layer I14
+Imaging Copper Layer BOT
+Processing images
+PASS: No overlap detected.
+TEST: Duplicate part IDs.
+PASS: All part IDs are unique.
+TEST: Unplaced components.
+PASS: All components placed.
+TEST: Board edge.
+PASS: Board edge complete.
+TEST: Components outside board edge.
+PASS: Components within board edge.
+TEST: General object validation tests.
+PASS: General validation.
+TEST: Length matched routes.
+PASS: Length matched routes.
+TEST: Differential Pairs.
+PASS: Differential Pairs.
+TEST: Layer Stackup and Drill Sets.
+PASS: Layer stackup valid.
+TEST: Validate vias.
+PASS: Via validation.
+TEST: stitching-vias connectivity.
+PASS: Stitching Vias.
+TEST: Validate traces.
+This may take a while on larger boards.
+PASS: Trace validation.
+TEST: DRC room rules.
+PASS: DRC room rules.
+TEST: Via overlaps and drill ranges.
+PASS: Via overlaps and drill ranges.
+Pre-production check end:
+0 errors, 0 failed, 0 warnings, 17 passed.
